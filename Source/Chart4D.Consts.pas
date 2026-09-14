@@ -76,6 +76,8 @@ resourcestring
   SUnsupportedTextAlignH = 'Unsupported horizontal text alignment: %d';
   /// <summary>Raised when a text alignment value outside <c>TTextAlignV</c> is resolved.</summary>
   SUnsupportedTextAlignV = 'Unsupported vertical text alignment: %d';
+  /// <summary>Raised when a <c>TSvgChartCanvas</c> is created without a canvas to measure text with.</summary>
+  SSvgTextMeasurerRequired = 'TSvgChartCanvas requires a non-nil TextMeasurer canvas to measure text';
   /// <summary>Raised when no PNG encoder is registered with the imaging back end.</summary>
   SPngEncoderNotFound = 'No PNG image encoder is available on this system';
   /// <summary>Raised when writing a chart PNG to disk fails.</summary>

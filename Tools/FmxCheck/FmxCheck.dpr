@@ -41,6 +41,7 @@ uses
   Chart4D.Renderer in '..\..\Source\Chart4D.Renderer.pas',
   Chart4D.Tooltip in '..\..\Source\Chart4D.Tooltip.pas',
   Chart4D.Hover in '..\..\Source\Chart4D.Hover.pas',
+  Chart4D.Svg in '..\..\Source\Chart4D.Svg.pas',
   Chart4D.FMX in '..\..\Source\FMX\Chart4D.FMX.pas',
   Chart4DDemo.Catalog in '..\..\Examples\Common\Chart4DDemo.Catalog.pas';
 
@@ -629,6 +630,34 @@ begin
   Writeln('FmxCheck: PNG exported to ', ExportPath, ' (', FileSize, ' bytes)');
 end;
 
+/// <summary>
+/// Exports a chart as SVG through the control and checks that the file is an SVG document
+/// without a byte order mark, carrying the chart's title as real text.
+/// </summary>
+procedure ExportAndVerifySvg(const ExportPath: string);
+begin
+  const Chart = TChart4D.Create(nil);
+  try
+    BuildTooltipSamplePlot(Chart.Plot);
+    Chart.SaveToSvg(ExportPath);
+  finally
+    Chart.Free;
+  end;
+
+  const Bytes = TFile.ReadAllBytes(ExportPath);
+  const StartsWithByteOrderMark = (Length(Bytes) >= 3) and (Bytes[0] = $EF) and (Bytes[1] = $BB) and (Bytes[2] = $BF);
+  if StartsWithByteOrderMark then
+    raise EChart4DException.CreateFmt('SVG file starts with a byte order mark: %s', [ExportPath]);
+
+  const Svg = TEncoding.UTF8.GetString(Bytes);
+  if not Svg.StartsWith('<svg ') then
+    raise EChart4DException.CreateFmt('SVG file does not start with an <svg> element: %s', [ExportPath]);
+  if not Svg.Contains('>Life expectancy</text>') then
+    raise EChart4DException.CreateFmt('SVG file does not carry the chart title as text: %s', [ExportPath]);
+
+  Writeln('FmxCheck: SVG exported to ', ExportPath, ' (', Length(Bytes), ' bytes)');
+end;
+
 begin
   try
     const ExportPath = TPath.Combine(TPath.GetTempPath, 'Chart4DFmxCheck.png');
@@ -639,6 +668,9 @@ begin
 
     ExportTooltipSample(TooltipExportPath);
     VerifyExportedFile(TooltipExportPath);
+
+    const SvgExportPath = TPath.Combine(TPath.GetTempPath, 'Chart4DFmxCheck.svg');
+    ExportAndVerifySvg(SvgExportPath);
 
     VerifyPollutedCanvasRender;
 

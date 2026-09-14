@@ -34,7 +34,7 @@ placement and the colours are already decided. Override any of them when you dis
 
 The core is plain Object Pascal on the RTL and does not know about VCL or FMX. The two controls
 are thin adapters over one shared renderer, so a chart renders pixel-for-pixel the same on both
-frameworks and exports to PNG the same way.
+frameworks and exports to PNG and SVG the same way.
 
 ## Quick start
 
@@ -189,7 +189,18 @@ end;
 ```pascal
 Chart.SaveToPng('chart.png');            // 640x450 by default
 Chart.SaveToPng('large.png', 1280, 900);
+Chart.SaveToSvg('chart.svg');            // the same chart as vectors and real text
+const Markup = Chart.ToSvg;              // the same document as a string
 ```
+
+The SVG measures its text with the framework's own fonts, so its layout is identical to the
+PNG. Every label is anchored where the renderer placed it, so it keeps its alignment when a
+browser draws it in a font of slightly different width. There is no XML declaration: the
+same markup works as a file and pasted inline into an HTML page, where the text can be
+selected and indexed. Keep PNG for email, since several mail clients do not display SVG.
+
+Without a control, `TChartSvg.Render(Plot, TextMeasurer, Width, Height)` in `Chart4D.Svg`
+returns the markup, measuring text with any `IChartCanvas` you pass in.
 
 The publication footer is part of the export: the source text on the left, an optional logo on
 the right, separated from the chart by a full-width rule.

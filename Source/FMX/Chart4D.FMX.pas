@@ -138,6 +138,24 @@ type
                         const Width: Integer = DefaultExportWidth;
                         const Height: Integer = DefaultExportHeight);
 
+    /// <summary>
+    /// Renders the owned plot at <c>Width</c> x <c>Height</c> pixels and returns it as an
+    /// SVG document, measuring text through <c>TTextLayout</c> so the layout matches
+    /// <c>SaveToPng</c>. The markup works as a standalone file and inline in an HTML page.
+    /// Never includes the hover tooltip.
+    /// </summary>
+    /// <exception cref="EChart4DException">Raised when the plot has no series to export.</exception>
+    function ToSvg(const Width: Integer = DefaultExportWidth;
+                   const Height: Integer = DefaultExportHeight): string;
+
+    /// <summary>
+    /// Writes <c>ToSvg</c> to <c>FilePath</c> as a UTF-8 file without a byte order mark.
+    /// </summary>
+    /// <exception cref="EChart4DException">Raised when the plot has no series to export.</exception>
+    procedure SaveToSvg(const FilePath: string;
+                        const Width: Integer = DefaultExportWidth;
+                        const Height: Integer = DefaultExportHeight);
+
     /// <summary>The owned chart data and configuration.</summary>
     property Plot: TChartPlot read FPlot;
     /// <summary>Whether the hover tooltip is drawn during <c>Paint</c>. Default <c>True</c>.</summary>
@@ -148,8 +166,13 @@ type
 
 implementation
 
+uses
+  System.IOUtils,
+  Chart4D.Svg;
+
 resourcestring
-  SFailedToBeginScene = 'Failed to begin an FMX scene on the export bitmap for "%s"';
+  SFailedToBeginMeasureScene = 'Failed to begin an FMX scene on the bitmap used to measure SVG text';
+  SFailedToBeginScene ='Failed to begin an FMX scene on the export bitmap for "%s"';
   SFailedToBeginBackBufferScene = 'Failed to begin an FMX scene on the control''s back buffer';
 
 constructor TFmxChartCanvas.Create(const Canvas: FMX.Graphics.TCanvas);
@@ -450,6 +473,35 @@ begin
   finally
     Bitmap.Free;
   end;
+end;
+
+function TChart4D.ToSvg(const Width: Integer = DefaultExportWidth;
+                        const Height: Integer = DefaultExportHeight): string;
+begin
+  { Text is only measured on this surface, never drawn, so one pixel is enough. }
+  const MeasureBitmap = TBitmap.Create(1, 1);
+  try
+    const SceneStarted = MeasureBitmap.Canvas.BeginScene;
+    if not SceneStarted then
+      raise EChart4DException.Create(SFailedToBeginMeasureScene);
+
+    try
+      const TextMeasurer: IChartCanvas = TFmxChartCanvas.Create(MeasureBitmap.Canvas);
+      Result := TChartSvg.Render(FPlot, TextMeasurer, Width, Height);
+    finally
+      MeasureBitmap.Canvas.EndScene;
+    end;
+  finally
+    MeasureBitmap.Free;
+  end;
+end;
+
+procedure TChart4D.SaveToSvg(const FilePath: string;
+                             const Width: Integer = DefaultExportWidth;
+                             const Height: Integer = DefaultExportHeight);
+begin
+  const Svg = ToSvg(Width, Height);
+  TFile.WriteAllBytes(FilePath, TEncoding.UTF8.GetBytes(Svg));
 end;
 
 procedure TChart4D.PlotChanged(Sender: TObject);

@@ -29,7 +29,8 @@ uses
   Chart4D.Canvas.Interfaces in '..\..\Source\Chart4D.Canvas.Interfaces.pas',
   Chart4D.Plot in '..\..\Source\Chart4D.Plot.pas',
   Chart4D.Renderer in '..\..\Source\Chart4D.Renderer.pas',
-  Chart4D.Tooltip in '..\..\Source\Chart4D.Tooltip.pas';
+  Chart4D.Tooltip in '..\..\Source\Chart4D.Tooltip.pas',
+  Chart4D.Svg in '..\..\Source\Chart4D.Svg.pas';
 
 type
   /// <summary>
@@ -280,6 +281,29 @@ begin
   end;
 end;
 
+procedure CheckSvg;
+var
+  TextMeasurer: IChartCanvas;
+begin
+  TextMeasurer := TNullChartCanvas.Create;
+
+  const LinePlot = TChartPlot.Create;
+  try
+    LinePlot.Title := 'Life expectancy';
+    LinePlot.Categories := ['1952', '1972', '1992', '2007'];
+    LinePlot.AddSeries('Netherlands', [72.1, 73.2, 77.4, 79.8]);
+    LinePlot.AddSeries('Belgium', [68.0, 71.1, 76.0, 79.4]);
+
+    const Svg = TChartSvg.Render(LinePlot, TextMeasurer, 640, 450);
+    const IsSvgDocument = Svg.StartsWith('<svg ') and Svg.TrimRight.EndsWith('</svg>');
+    if not IsSvgDocument then
+      raise EChart4DException.Create('TChartSvg.Render did not produce an SVG document');
+    Writeln('TChartSvg (Line): OK (', Length(Svg), ' characters)');
+  finally
+    LinePlot.Free;
+  end;
+end;
+
 begin
   try
     const Style = TChartStyle.Default;
@@ -311,6 +335,7 @@ begin
 
     CheckRenderer;
     CheckTooltip;
+    CheckSvg;
 
     Writeln('CoreCheck: all checks passed');
     ExitCode := 0;

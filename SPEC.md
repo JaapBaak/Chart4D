@@ -16,7 +16,7 @@ scatter (with optional bubble sizing), pie and donut. One built-in visual style
 segments, arrows, reference lines, shaded range overlays) and uncertainty/range band
 series. Value labels with deterministic placement (4.12) and series highlighting (4.13).
 Legend control. Axis label formatting, including locale-aware formatting (4.14),
-logarithmic value axes (4.15) and date axes (4.16). PNG export
+logarithmic value axes (4.15) and date axes (4.16). PNG and SVG export (4.25)
 with publication finishing: left-aligned title/subtitle, footer with source text (left),
 a full-width separator line above the footer, and an optional logo (right). Default
 export size 640x450 pixels. Hover interaction on both controls: nearest data point
@@ -40,10 +40,11 @@ Chart4D/
 │   ├── Chart4D.Renderer.pas
 │   ├── Chart4D.Tooltip.pas      Hit-testing and the hover tooltip (4.11)
 │   ├── Chart4D.Hover.pas        Hover state shared by both controls (4.11)
+│   ├── Chart4D.Svg.pas          SVG canvas and one-call SVG rendering (4.25)
 │   ├── VCL/
-│   │   └── Chart4D.VCL.pas      GDI+ canvas, TChart4D control, PNG export
+│   │   └── Chart4D.VCL.pas      GDI+ canvas, TChart4D control, PNG and SVG export
 │   └── FMX/
-│       └── Chart4D.FMX.pas      FMX canvas, TChart4D control, PNG export
+│       └── Chart4D.FMX.pas      FMX canvas, TChart4D control, PNG and SVG export
 ├── packages/RAD Studio 13.0/
 │   ├── Chart4D_R.dpk/.dproj         requires rtl
 │   ├── Chart4D_VCL_R.dpk/.dproj     requires rtl, vcl, Chart4D_R
@@ -211,10 +212,11 @@ const
   DefaultExportHeight = 450;
 ```
 
-The `resourcestring` entries for the capabilities in 4.12 to 4.24:
+The `resourcestring` entries for the capabilities in 4.12 to 4.25:
 
 ```pascal
 resourcestring
+  SSvgTextMeasurerRequired = 'TSvgChartCanvas requires a non-nil TextMeasurer canvas to measure text';
   SSeriesSizeCountMismatch = 'Series "%s" has %d value(s) but %d size(s)';
   SLogAxisRequiresPositiveValues = 'Logarithmic value axis requires every value to be greater than 0, got %g';
   SPairedValueCountMismatch = '%s series has %d start value(s) but %d end value(s)';
@@ -1351,6 +1353,91 @@ legend, hit-testing) except:
   for formatting it (e.g. `'Total: 1,234'`), the same plain-string convention
   `Source`/`Title`/`Subtitle` already use elsewhere in this library.
 
+### 4.25 SVG export
+
+`Chart4D.Svg.pas` is a core unit (RTL-only) and part of `Chart4D_R.dpk`/`.dproj`:
+
+```pascal
+type
+  TSvgChartCanvas = class(TInterfacedObject, IChartCanvas)
+  public
+    constructor Create(const Width, Height: Single; const TextMeasurer: IChartCanvas);
+    destructor Destroy; override;
+    // implements every IChartCanvas method by appending one SVG element
+    function ToSvg: string;
+    property Title: string read ... write ...;
+  end;
+
+  TChartSvg = class
+  public
+    class function Render(const Plot: TChartPlot; const TextMeasurer: IChartCanvas;
+                          const Width, Height: Single): string; static;
+  end;
+```
+
+**Text measurement.** Markup cannot measure text, so `MeasureText` delegates to
+`TextMeasurer`, a canvas that is only ever asked to measure and never drawn on. A nil
+`TextMeasurer` raises `EChart4DException.Create(SSvgTextMeasurerRequired)` (4.2). The
+controls pass their own adapter canvas over a 1x1 bitmap, so an SVG export lays out
+exactly like `SaveToPng` at the same size.
+
+**One element per call.** `FillBackground` and `FillRect` write a `<rect>` (normalized, so
+reversed bounds still draw); `DrawLine` a `<line>`, with `stroke-dasharray` of three stroke
+widths on and one off when dashed (the GDI+ and FMX dash pattern); `DrawPolyline` an
+unfilled `<polyline>` with `stroke-miterlimit="10"` (GDI+'s limit); `FillPolygon` a
+`<polygon>` with `fill-rule="evenodd"` (GDI+ fills in alternate mode); `FillCircle` a
+`<circle>`; `DrawText` a `<text>`; `DrawImage` an `<image>`. The same guards as the adapters
+apply: fewer than two polyline points, fewer than three polygon points, a radius that is
+not positive, and empty text write nothing. Colors are `#RRGGBB` with a separate
+`fill-opacity`/`stroke-opacity` of `A / 255` only when the alpha channel is not `$FF`.
+Numbers are written with the invariant format settings and at most two decimals.
+
+**Text placement.** `x` is the anchor `X` itself, with `text-anchor` `start`, `middle` or
+`end` for `AlignH` `Left`, `Center` or `Right`, so a label keeps its alignment when the
+viewer draws it in a font of slightly different width. `y` is the baseline: the top of the
+line box `TChartTextAlign.ResolveOrigin` gives for the measured size, plus `0.78` times the
+measured height (Arial's ascent is 0.788 of its line height, Helvetica's 0.77).
+`font-family` is the quoted `FontName`, followed by `Helvetica` for `Arial` and `Arial` for
+`Helvetica` (the two share their metrics), then `sans-serif`; `font-size` is the style size
+in pixels; bold adds `font-weight="bold"`. Text is XML-escaped, and control characters other
+than tab, line feed and carriage return are dropped, since XML 1.0 forbids them.
+
+**Images.** `DrawImage` embeds a PNG, JPEG, GIF or BMP file, recognized by its signature,
+as a base64 data URI with `preserveAspectRatio="xMaxYMid meet"`, which is
+`TChartImageFit`'s rule (aspect fit, right-aligned, vertically centred) applied by the
+viewer. A missing file or any other format writes nothing, like a failed load in the
+adapters.
+
+**Document.** `ToSvg` returns an `<svg>` root with `xmlns`, `width`, `height`, a `viewBox`
+of `-0.5 -0.5 Width Height` and `xml:space="preserve"` (so runs of spaces in a label are
+not collapsed). The view box origin lines SVG's pixel grid, whose pixel centres lie at
+half-pixel coordinates, up with GDI+'s, whose centres lie on whole numbers: the renderer
+places 1 px lines on whole-pixel coordinates, so they stay crisp in both exports, and every
+edge lands where the PNG has it. `FillBackground` compensates, so the background still
+covers the whole document. Then
+a `<title>` when `Title` is not empty, then the elements in call order. There is no XML
+declaration, so the same string is a valid SVG file and can be placed inline in an HTML
+page.
+
+**`TChartSvg.Render`** raises `EChart4DException` with `SRenderPlotRequired` for a nil plot
+and with `SNoSeriesToRender` for a plot without series (the same rule as `SaveToPng`), sets
+the document `Title` to `Plot.Title`, renders through `TChartRenderer.Render` and returns
+`ToSvg`.
+
+**Controls.** Both `TChart4D` controls (4.9, 4.10) add:
+
+```pascal
+function ToSvg(const Width: Integer = DefaultExportWidth;
+               const Height: Integer = DefaultExportHeight): string;
+procedure SaveToSvg(const FilePath: string;
+                    const Width: Integer = DefaultExportWidth;
+                    const Height: Integer = DefaultExportHeight);
+```
+
+`ToSvg` calls `TChartSvg.Render` with the control's own canvas class as the text measurer;
+`SaveToSvg` writes that string as UTF-8 without a byte order mark. Neither ever includes
+the hover tooltip.
+
 ## 5. Tests (Tests\, DUnitX)
 
 Console project `Chart4D.Tests.dpr` + `build.bat` (dcc32; the RAD Studio location is
@@ -1431,6 +1518,18 @@ read from the `BDS` environment variable, defaulting to
   plot (`Line`, `GroupedBar`, `RangePlot`, `Pie`), and every example's heading matches its
   build data. The code shown beside a chart in the demos therefore cannot drift from the
   chart it claims to produce.
+
+- `Chart4D.Svg.Tests.pas`: `TSvgChartCanvas` against a `TRecordingCanvas` as text measurer
+  (4.25): the root element's size and half-pixel `viewBox`, no XML declaration, an escaped
+  `<title>`; a background that covers the document from the view box origin;
+  hex colors with an opacity attribute only for a translucent color; normalized reversed
+  rectangles; the dash pattern scaled by stroke width; the point-count and radius guards;
+  invariant decimals under a comma-decimal locale; baseline and `text-anchor` for left/top,
+  right and centre/middle alignment; bold, the Arial-to-Helvetica fallback, escaping and
+  dropped control characters; an embedded PNG data URI with `xMaxYMid meet`, and nothing
+  for an unrecognized or missing file; the nil-measurer and no-series guards; and, for a
+  whole annotated area chart rendered by `TChartSvg.Render`, exactly one SVG element per
+  recorded canvas call of each kind.
 
 Tests use no `initialization` sections: fixtures carry the `[TestFixture]` attribute and
 are discovered through RTTI. Test names are underscore-separated and read as the subject

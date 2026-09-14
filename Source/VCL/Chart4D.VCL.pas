@@ -164,6 +164,24 @@ type
                         const Width: Integer = DefaultExportWidth;
                         const Height: Integer = DefaultExportHeight);
 
+    /// <summary>
+    /// Renders the current plot at <c>Width</c> x <c>Height</c> pixels and returns it as an
+    /// SVG document, measuring text through GDI+ so the layout matches <c>SaveToPng</c>. The
+    /// markup works as a standalone file and inline in an HTML page. Never includes the
+    /// hover tooltip.
+    /// </summary>
+    /// <exception cref="EChart4DException">Raised when the plot has no series to export.</exception>
+    function ToSvg(const Width: Integer = DefaultExportWidth;
+                   const Height: Integer = DefaultExportHeight): string;
+
+    /// <summary>
+    /// Writes <c>ToSvg</c> to <c>FilePath</c> as a UTF-8 file without a byte order mark.
+    /// </summary>
+    /// <exception cref="EChart4DException">Raised when the plot has no series to export.</exception>
+    procedure SaveToSvg(const FilePath: string;
+                        const Width: Integer = DefaultExportWidth;
+                        const Height: Integer = DefaultExportHeight);
+
     /// <summary>The owned chart data and configuration.</summary>
     property Plot: TChartPlot read FPlot;
     /// <summary>Whether hovering a data point highlights it and shows a tooltip. Default <c>True</c>.</summary>
@@ -177,6 +195,10 @@ type
   end;
 
 implementation
+
+uses
+  System.IOUtils,
+  Chart4D.Svg;
 
 { TGdiPlusChartCanvas }
 
@@ -452,6 +474,33 @@ begin
   finally
     Bitmap.Free;
   end;
+end;
+
+function TChart4D.ToSvg(const Width: Integer = DefaultExportWidth;
+                        const Height: Integer = DefaultExportHeight): string;
+begin
+  { Text is only measured on this surface, never drawn, so one pixel is enough. It is a
+    bitmap like SaveToPng's, so both exports measure with the same GDI+ settings. }
+  const MeasureBitmap = TGPBitmap.Create(1, 1, PixelFormat32bppARGB);
+  try
+    const Graphics = TGPGraphics.Create(MeasureBitmap);
+    try
+      const TextMeasurer: IChartCanvas = TGdiPlusChartCanvas.Create(Graphics);
+      Result := TChartSvg.Render(FPlot, TextMeasurer, Width, Height);
+    finally
+      Graphics.Free;
+    end;
+  finally
+    MeasureBitmap.Free;
+  end;
+end;
+
+procedure TChart4D.SaveToSvg(const FilePath: string;
+                             const Width: Integer = DefaultExportWidth;
+                             const Height: Integer = DefaultExportHeight);
+begin
+  const Svg = ToSvg(Width, Height);
+  TFile.WriteAllBytes(FilePath, TEncoding.UTF8.GetBytes(Svg));
 end;
 
 procedure TChart4D.Paint;
